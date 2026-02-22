@@ -135,6 +135,10 @@ def create_app() -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get(f"{settings.api_prefix}/health", include_in_schema=False)
+    async def api_health() -> dict[str, str]:
+        return {"status": "ok"}
+
     @app.get("/", include_in_schema=False)
     async def root(camp: int | None = None) -> Response:
         site_base = settings.site_base_url.rstrip("/")
