@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="#111827" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Rear wheel -->
+  <circle cx="14" cy="44" r="10" />
+  <circle cx="14" cy="44" r="3" opacity="0.3" />
+  <!-- Front wheel -->
+  <circle cx="50" cy="44" r="10" />
+  <circle cx="50" cy="44" r="3" opacity="0.3" />
+  <!-- Frame -->
+  <path d="M20 44l8-20h12l6 12" stroke-width="2.5" />
+  <!-- Top tube -->
+  <path d="M28 24l12 0" stroke-width="2.5" />
+  <!-- Fork -->
+  <path d="M40 24l10 20" stroke-width="2.5" />
+  <!-- Seat stays -->
+  <path d="M14 44l14-20" stroke-width="1.5" opacity="0.5" />
+  <!-- Seat -->
+  <path d="M25 22h7" stroke-width="3" />
+  <!-- Handlebar -->
+  <path d="M38 21h5c1 0 2 .5 2 1.5" stroke-width="2.5" />
+  <!-- Lightning bolt -->
+  <path d="M34 4l-4 9h7l-4 9" stroke-width="2.5" stroke="#F59E0B" fill="none" />
+  <!-- Battery on frame -->
+  <rect x="30" y="28" width="8" height="5" rx="1.5" fill="#F59E0B" opacity="0.2" stroke="#F59E0B" stroke-width="1.5" />
+  <path d="M33 29.5v2M35 29.5v2" stroke="#F59E0B" stroke-width="1" opacity="0.6" />
+</svg>

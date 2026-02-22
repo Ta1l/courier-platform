@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.log
+.venv/
+venv/
+.pytest_cache/
+
+# Telegram bot runtime data
+tg/data/
+tg/*.db
+tg/.env
+
+# Node
+node_modules/
+vie/node_modules/
+vie/.git_vie_backup/
+
+# Frontend build artifacts
+dist/
+vie/dist/
+admin-dist/
+admin-spa/node_modules/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

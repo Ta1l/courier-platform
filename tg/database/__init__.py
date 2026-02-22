@@ -1,0 +1,1 @@
+"""database package — Contains SQLite database operations."""
