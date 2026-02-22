@@ -79,7 +79,7 @@ npm --prefix admin-spa run build
 
 ```bash
 source /opt/kurer-spb/.venv/bin/activate
-python tg/migrations/runner.py upgrade
+python tg/migrations/runner.py --db /opt/kurer-spb/tg/applications.db upgrade
 ```
 
 ## 7. systemd сервисы
@@ -209,7 +209,7 @@ npm --prefix vie run build
 npm --prefix admin-spa ci
 npm --prefix admin-spa run build
 
-python tg/migrations/runner.py upgrade
+python tg/migrations/runner.py --db /opt/kurer-spb/tg/applications.db upgrade
 
 sudo systemctl restart kurer-api kurer-bot
 sudo systemctl reload nginx

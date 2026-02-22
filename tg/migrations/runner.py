@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import sqlite3
 import sys
 from dataclasses import dataclass
@@ -12,10 +13,36 @@ from pathlib import Path
 from typing import Callable
 
 TG_DIR = Path(__file__).resolve().parents[1]
+REPO_DIR = TG_DIR.parent
 VERSIONS_DIR = Path(__file__).resolve().parent / "versions"
 
 if str(TG_DIR) not in sys.path:
     sys.path.insert(0, str(TG_DIR))
+
+
+def _load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", maxsplit=1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+
+        os.environ.setdefault(key, value)
+
+
+_load_env_file(REPO_DIR / ".env")
+_load_env_file(TG_DIR / ".env")
 
 from database.db import DB_PATH  # noqa: E402
 
@@ -214,4 +241,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
