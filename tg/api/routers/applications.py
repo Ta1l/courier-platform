@@ -9,7 +9,7 @@ import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from api.database import fetchall, fetchone, get_db
-from api.deps import get_current_user
+from api.deps import get_current_user, require_roles
 from api.schemas import ApplicationOut, ApplicationUpdate
 
 router = APIRouter(prefix="/applications", tags=["applications"])
@@ -171,3 +171,37 @@ async def update_application(
 
     return _serialize_application(row)
 
+
+@router.delete("/{application_id}")
+async def delete_application(
+    application_id: int,
+    _: dict[str, Any] = Depends(require_roles("admin")),
+    db: aiosqlite.Connection = Depends(get_db),
+) -> dict[str, Any]:
+    exists = await fetchone(
+        db,
+        "SELECT id FROM applications WHERE id = ?",
+        (application_id,),
+    )
+    if not exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found.",
+        )
+
+    deleted_cursor = await db.execute(
+        "DELETE FROM applications WHERE id = ?",
+        (application_id,),
+    )
+    if int(deleted_cursor.rowcount or 0) == 0:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found.",
+        )
+
+    await db.commit()
+    return {
+        "success": True,
+        "deleted_application_id": application_id,
+    }

@@ -137,6 +137,24 @@ export function CampaignsPage() {
     }
   };
 
+  const deleteCampaign = async (campaign: Campaign) => {
+    if (currentUser?.role !== "admin") return;
+    const approved = window.confirm(
+      `Удалить кампанию "${campaign.name}" (ID ${campaign.id}) и все связанные заявки?`,
+    );
+    if (!approved) return;
+
+    try {
+      await api.delete(`/api/campaigns/${campaign.id}`);
+      if (editingId === campaign.id) {
+        setEditingId(null);
+      }
+      await loadCampaigns();
+    } catch {
+      setError("Не удалось удалить кампанию.");
+    }
+  };
+
   return (
     <section className="stack-lg">
       <section className="panel">
@@ -229,6 +247,11 @@ export function CampaignsPage() {
                           <button className="button button-ghost" type="button" onClick={() => toggleStatus(campaign)}>
                             {campaign.status === "active" ? "Поставить на паузу" : "Активировать"}
                           </button>
+                          {currentUser?.role === "admin" ? (
+                            <button className="button button-ghost" type="button" onClick={() => deleteCampaign(campaign)}>
+                              Удалить
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>

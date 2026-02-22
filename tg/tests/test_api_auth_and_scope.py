@@ -168,3 +168,160 @@ def test_investor_ownership_scope(client):
         json={"status": "rejected", "revenue": 100},
     )
     assert forbidden_update.status_code in {403, 404}
+
+
+def test_admin_delete_campaign_and_application_with_investor_visibility(client):
+    test_client, db_path = client
+
+    admin_auth = login(test_client, "admin", "admin_pass_123")
+    admin_headers = auth_headers(admin_auth["access_token"])
+
+    investor = test_client.post(
+        "/api/users",
+        headers=admin_headers,
+        json={
+            "login": "investor_delete",
+            "password": "investor_pass_delete",
+            "name": "Investor Delete",
+            "role": "investor",
+            "percent": 35,
+        },
+    )
+    assert investor.status_code == 201, investor.text
+    investor_id = investor.json()["id"]
+
+    campaign = test_client.post(
+        "/api/campaigns",
+        headers=admin_headers,
+        json={
+            "investor_id": investor_id,
+            "name": "Campaign Delete",
+            "budget": 1200,
+            "status": "active",
+        },
+    )
+    assert campaign.status_code == 201, campaign.text
+    campaign_id = campaign.json()["id"]
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO applications (
+                telegram_id, username, first_name, phone, age, citizenship, source,
+                contacted, submitted_at, campaign_id, revenue, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                333,
+                "delete_user",
+                "Delete User",
+                "+70000000003",
+                25,
+                "RU",
+                "camp_delete",
+                0,
+                now,
+                campaign_id,
+                3000,
+                "new",
+            ),
+        )
+        application_id = cur.lastrowid
+        conn.commit()
+
+    investor_auth = login(test_client, "investor_delete", "investor_pass_delete")
+    investor_headers = auth_headers(investor_auth["access_token"])
+
+    investor_campaigns_before = test_client.get("/api/campaigns", headers=investor_headers)
+    assert investor_campaigns_before.status_code == 200
+    assert [row["id"] for row in investor_campaigns_before.json()] == [campaign_id]
+
+    investor_apps_before = test_client.get("/api/applications", headers=investor_headers)
+    assert investor_apps_before.status_code == 200
+    assert [row["id"] for row in investor_apps_before.json()] == [application_id]
+
+    investor_delete_app = test_client.delete(
+        f"/api/applications/{application_id}",
+        headers=investor_headers,
+    )
+    assert investor_delete_app.status_code == 403, investor_delete_app.text
+
+    investor_delete_campaign = test_client.delete(
+        f"/api/campaigns/{campaign_id}",
+        headers=investor_headers,
+    )
+    assert investor_delete_campaign.status_code == 403, investor_delete_campaign.text
+
+    admin_delete_app = test_client.delete(
+        f"/api/applications/{application_id}",
+        headers=admin_headers,
+    )
+    assert admin_delete_app.status_code == 200, admin_delete_app.text
+
+    with sqlite3.connect(db_path) as conn:
+        app_exists = conn.execute(
+            "SELECT COUNT(*) FROM applications WHERE id = ?",
+            (application_id,),
+        ).fetchone()[0]
+    assert app_exists == 0
+
+    investor_apps_after_app_delete = test_client.get("/api/applications", headers=investor_headers)
+    assert investor_apps_after_app_delete.status_code == 200
+    assert investor_apps_after_app_delete.json() == []
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO applications (
+                telegram_id, username, first_name, phone, age, citizenship, source,
+                contacted, submitted_at, campaign_id, revenue, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                444,
+                "delete_user_2",
+                "Delete User Two",
+                "+70000000004",
+                27,
+                "RU",
+                "camp_delete_2",
+                0,
+                now,
+                campaign_id,
+                4000,
+                "approved",
+            ),
+        )
+        conn.commit()
+
+    admin_delete_campaign = test_client.delete(
+        f"/api/campaigns/{campaign_id}",
+        headers=admin_headers,
+    )
+    assert admin_delete_campaign.status_code == 200, admin_delete_campaign.text
+    payload = admin_delete_campaign.json()
+    assert payload["success"] is True
+    assert payload["deleted_campaign_id"] == campaign_id
+    assert payload["deleted_applications"] >= 1
+
+    with sqlite3.connect(db_path) as conn:
+        campaign_exists = conn.execute(
+            "SELECT COUNT(*) FROM campaigns WHERE id = ?",
+            (campaign_id,),
+        ).fetchone()[0]
+        linked_apps = conn.execute(
+            "SELECT COUNT(*) FROM applications WHERE campaign_id = ?",
+            (campaign_id,),
+        ).fetchone()[0]
+
+    assert campaign_exists == 0
+    assert linked_apps == 0
+
+    investor_campaigns_after = test_client.get("/api/campaigns", headers=investor_headers)
+    assert investor_campaigns_after.status_code == 200
+    assert investor_campaigns_after.json() == []
+
+    investor_apps_after = test_client.get("/api/applications", headers=investor_headers)
+    assert investor_apps_after.status_code == 200
+    assert investor_apps_after.json() == []

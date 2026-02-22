@@ -1,6 +1,7 @@
-﻿import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { formatDate, formatMoney } from "../lib/format";
+import { useAuthStore } from "../store/auth";
 import type { Application, Campaign } from "../types";
 
 type Filters = {
@@ -26,6 +27,7 @@ function applicationStatusLabel(status: string): string {
 }
 
 export function ApplicationsPage() {
+  const currentUser = useAuthStore((state) => state.user);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [filters, setFilters] = useState<Filters>(defaultFilters);
@@ -100,6 +102,24 @@ export function ApplicationsPage() {
       await fetchApplications();
     } catch {
       setError("Не удалось обновить заявку.");
+    }
+  };
+
+  const onDeleteRow = async (application: Application) => {
+    if (currentUser?.role !== "admin") return;
+    const approved = window.confirm(`Удалить заявку ID ${application.id}?`);
+    if (!approved) return;
+
+    try {
+      await api.delete(`/api/applications/${application.id}`);
+      setApplications((prev) => prev.filter((item) => item.id !== application.id));
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[application.id];
+        return next;
+      });
+    } catch {
+      setError("Не удалось удалить заявку.");
     }
   };
 
@@ -236,9 +256,16 @@ export function ApplicationsPage() {
                       </td>
                       <td>{formatDate(application.submitted_at)}</td>
                       <td>
-                        <button className="button button-ghost" type="button" onClick={() => onSaveRow(application.id)}>
-                          Сохранить
-                        </button>
+                        <div className="inline-actions">
+                          <button className="button button-ghost" type="button" onClick={() => onSaveRow(application.id)}>
+                            Сохранить
+                          </button>
+                          {currentUser?.role === "admin" ? (
+                            <button className="button button-ghost" type="button" onClick={() => onDeleteRow(application)}>
+                              Удалить
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   );

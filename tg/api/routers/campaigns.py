@@ -8,7 +8,7 @@ import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from api.database import fetchall, fetchone, get_db
-from api.deps import get_current_user
+from api.deps import get_current_user, require_roles
 from api.schemas import CampaignCreate, CampaignOut, CampaignStatusUpdate, CampaignUpdate
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -248,3 +248,41 @@ async def update_campaign_status(
         )
     return _serialize_campaign(updated)
 
+
+@router.delete("/{campaign_id}")
+async def delete_campaign(
+    campaign_id: int,
+    _: dict[str, Any] = Depends(require_roles("admin")),
+    db: aiosqlite.Connection = Depends(get_db),
+) -> dict[str, Any]:
+    campaign = await _fetch_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Campaign not found.",
+        )
+
+    # Keep deletion deterministic regardless of SQLite FK mode/version.
+    deleted_apps_cursor = await db.execute(
+        "DELETE FROM applications WHERE campaign_id = ?",
+        (campaign_id,),
+    )
+    deleted_apps = int(deleted_apps_cursor.rowcount or 0)
+
+    deleted_campaign_cursor = await db.execute(
+        "DELETE FROM campaigns WHERE id = ?",
+        (campaign_id,),
+    )
+    if int(deleted_campaign_cursor.rowcount or 0) == 0:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Campaign not found.",
+        )
+
+    await db.commit()
+    return {
+        "success": True,
+        "deleted_campaign_id": campaign_id,
+        "deleted_applications": deleted_apps,
+    }
