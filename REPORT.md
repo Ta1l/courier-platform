@@ -335,3 +335,253 @@ npm run build
 - Отдельный git есть только внутри `vie/`, тогда как изменения затрагивают и `tg/`.
 
 Из-за этого создать единую ветку/осмысленные коммиты для всего проекта в текущей структуре невозможно без предварительной инициализации/реорганизации репозитория.
+
+---
+
+## Security Cleanup (2026-02-22)
+
+### Состояние ДО работ
+
+- Был риск-комментарий от пользователя: Chrome отмечал сайт как опасный.
+- На сервере отсутствовали явные security headers в nginx-конфиге сайта.
+- В `nginx.conf` были ослабленные глобальные TLS-настройки (`TLSv1/TLSv1.1`).
+- SSH root login по паролю включён, в `auth.log` шёл активный brute-force.
+- Дополнительно зафиксирован `WARNING`: при первом подключении к серверу изменился SSH host key.
+
+### Финальный статус по шагам
+
+| Шаг | Статус | Результат |
+|---|---|---|
+| I. Бэкап | PASS | Создан `/root/backups/20260222_2249/`, сохранены БД/дамп/код/nginx-конфиги |
+| II. Git подготовка | PASS | Ветка `fix/security-cleanup-20260222`, `.gitignore` усилен, секреты в tracked-файлах не обнаружены |
+| III. Аудит кода | WARNING | Признаков вредоносного инжекта не найдено; есть внешние зависимости (Metrika/fonts), placeholders (`your-domain.com`) |
+| IV. Аудит сервера | WARNING | Руткитов/бэкдоров не обнаружено; есть brute-force на SSH и включённый root password login |
+| V. Внешние проверки | WARNING | Google Safe Browsing/Sucuri/OpenSSL проверены; VirusTotal и SSL Labs API ограничены внешними факторами |
+| VI. Hardening nginx | PASS | Добавлены security headers + CSP, TLS ужесточён, `server_tokens off` |
+| VII. Hardening backend | PASS | Добавлен middleware security headers в FastAPI, CORS проверен и ограничен |
+| VIII. Обновление зависимостей | PASS | `npm audit`: 4 high -> 0; Python-пакеты актуальны |
+| IX. Тестирование | PASS | `pytest` (4 passed), сборки SPA успешны, сервисы/бот работают |
+| X. Git commits/push | PASS | Логические коммиты выполнены, ветка запушена в origin |
+| XI. Deploy на сервер | PASS | Ветка развернута на сервере, сервисы перезапущены, ошибок старта нет |
+| XII. Post-deploy verification | WARNING | Внешние проверки частично ограничены (VT/SSL Labs), flow и headers подтверждены |
+
+### I. Бэкап (PASS)
+
+Папка: `/root/backups/20260222_2249/`
+
+Содержимое:
+- `applications.db`
+- `applications_dump.sql`
+- `site/` (из `/opt/kurer-spb/dist`)
+- `backend/` (из `/opt/kurer-spb/tg/api`)
+- `tg/`
+- `admin-dist/`
+- `nginx.conf`
+- `sites-enabled/`
+- `suspicious-files/`
+- `manifest.txt`
+
+### II. Git подготовка (PASS)
+
+- Создана ветка: `fix/security-cleanup-20260222`.
+- `.gitignore` дополнен: `.env`, `*.pem`, `private.key` (а также локальные `.env`-варианты).
+- Скан по секретам выполнен, в tracked-файлах реальные секреты не найдены.
+
+### III. Аудит кода (WARNING)
+
+Проверены паттерны:
+- `eval/document.write/atob/btoa/unescape/innerHTML/outerHTML`
+- `window.location.href/replace`, `meta refresh`
+- внешние `src`/`iframe`
+- длинные base64-последовательности
+
+Итог:
+- Явных вредоносных вставок не обнаружено.
+- В сборках есть ожидаемые внешние домены: `mc.yandex.ru`, `fonts.googleapis.com`, `fonts.gstatic.com`, `t.me`.
+- В `dist/robots.txt` и `dist/sitemap.xml` найден placeholder `your-domain.com` (не malware, но нужно исправить).
+
+### IV. Аудит сервера (WARNING)
+
+Артефакты:
+- `/root/backups/20260222_2249/chkrootkit.log`
+- `/root/backups/20260222_2249/rkhunter.log`
+- `/root/backups/20260222_2249/cron_audit.txt`
+- `/root/backups/20260222_2249/users_shells.txt`
+- `/root/backups/20260222_2249/network_ss.txt`
+- `/root/backups/20260222_2249/network_lsof.txt`
+- `/root/backups/20260222_2249/auth_audit.txt`
+- `/root/backups/20260222_2249/syslog_audit.txt`
+
+Результаты:
+- `chkrootkit`: rootkit/backdoor signatures не найдены.
+- `rkhunter`: `Possible rootkits: 0`.
+- Зафиксированы предупреждения по hardening:
+  - `PermitRootLogin yes` (SSH root по паролю).
+  - Массовые неуспешные SSH-попытки (brute-force фоново).
+
+Критическое правило STOP не активировалось: признаков активного руткита/бэкдора не выявлено.
+
+### V. Внешние проверки (WARNING)
+
+1. Google Safe Browsing API (PASS):
+   - `https://transparencyreport.google.com/transparencyreport/api/v3/safebrowsing/status?site=kurer-spb.ru`
+   - Ответ: `["sb.ssr",1,false,false,false,false,false,...]` (явных unsafe-флагов нет).
+2. Sucuri SiteCheck API (PASS):
+   - `https://sitecheck.sucuri.net/api/v3/?scan=https://kurer-spb.ru`
+   - `score=B`, `blacklists=0`, `security_warnings=0`.
+3. VirusTotal GUI (WARNING):
+   - Страница доступна, но автоматическое извлечение verdict без API key/интерактивной сессии ограничено.
+4. SSL Labs API (WARNING):
+   - `api.ssllabs.com` вернул capacity-error (`Running at full capacity`).
+5. OpenSSL из консоли (PASS):
+   - CN: `kurer-spb.ru`
+   - Issuer: Let's Encrypt `E8`
+   - Срок: `notBefore=2026-02-22`, `notAfter=2026-05-23`
+   - Поддержка: TLS 1.2 / TLS 1.3.
+
+### VI. Hardening nginx (PASS)
+
+Изменено на сервере:
+- `/etc/nginx/nginx.conf`
+  - `server_tokens off;`
+  - `ssl_protocols TLSv1.2 TLSv1.3;`
+  - `ssl_prefer_server_ciphers off;`
+- `/etc/nginx/sites-enabled/kurer-spb.ru`
+  - добавлены headers:
+    - `Strict-Transport-Security`
+    - `X-Content-Type-Options`
+    - `X-Frame-Options`
+    - `X-XSS-Protection`
+    - `Referrer-Policy`
+    - `Permissions-Policy`
+    - `Content-Security-Policy-Report-Only`
+    - `Content-Security-Policy`
+
+Проверка:
+- `nginx -t` -> OK
+- `systemctl reload nginx` -> OK
+- Open proxy/wildcard redirect уязвимых паттернов не найдено.
+
+### VII. Hardening backend FastAPI (PASS)
+
+Изменён файл:
+- `tg/api/app.py`
+
+Что добавлено:
+- Middleware security headers (defence in depth).
+- Санитизация CORS origins:
+  - wildcard `*` отбрасывается;
+  - fallback к `SITE_BASE_URL` origin при необходимости.
+
+Проверка:
+- `OPTIONS` с `Origin: https://evil.com` -> `400 Disallowed CORS origin`.
+- `OPTIONS` с `Origin: https://kurer-spb.ru` -> `200` + `Access-Control-Allow-Origin`.
+- На `/api/*` и `/admin` headers присутствуют.
+
+### VIII. Обновление зависимостей (PASS)
+
+Артефакты в бэкапе:
+- `npm_audit_before.json`
+- `npm_audit_after.json`
+- `npm_audit_after_force.json`
+- `pip_outdated.txt`
+- `pip_upgrade.log`
+- `admin_build.log`
+- `admin_build_after_force.log`
+
+Итог:
+- Node (`admin-spa`):
+  - до: `high=4`, `critical=0`
+  - после `npm audit fix --force`: `high=0`, `critical=0`
+  - обновлены `axios` и `react-router-dom`.
+- Python:
+  - `pip list --outdated` пустой;
+  - обновление по `tg/requirements.txt` без новых пакетов;
+  - совместимость сохранена.
+
+### IX. Тестирование (PASS)
+
+Локально:
+- `python -m compileall tg` -> OK
+- `python -m pytest tg/tests -q` -> `4 passed`
+- `cd admin-spa && npm run build` -> OK
+
+На сервере:
+- `systemctl is-active kurer-api` -> active
+- `systemctl is-active kurer-bot` -> active
+- `systemctl is-active nginx` -> active
+- `curl https://api.telegram.org/bot<TOKEN>/getMe` -> `ok: true`, bot `@kurer_pro_bot`
+- Ошибок в `nginx/error.log` по результатам проверки не зафиксировано.
+
+### X. Git commits/push (PASS)
+
+Коммиты:
+1. `chore: harden gitignore for secrets and build artifacts`
+2. `security: add FastAPI security headers and strict CORS sanitization`
+3. `chore: update admin-spa dependencies to remediate high vulnerabilities`
+
+Push:
+- `git push -u origin fix/security-cleanup-20260222` выполнен.
+
+### XI. Deploy на сервер (PASS)
+
+Шаги:
+1. `git fetch origin`
+2. `git checkout fix/security-cleanup-20260222`
+3. `git pull --ff-only origin fix/security-cleanup-20260222`
+4. `python tg/migrations/runner.py upgrade`
+5. `cd admin-spa && npm ci && npm run build`
+6. `systemctl restart kurer-api`
+7. `systemctl reload nginx`
+
+Примечание:
+- Перед checkout создан stash на сервере для локальных npm-изменений:
+  - `stash@{0}: temp-before-security-branch-switch`
+
+### XII. Post-deploy verification (WARNING)
+
+Повторно проверено:
+- security headers на `https://kurer-spb.ru/`, `https://kurer-spb.ru/admin`, `https://kurer-spb.ru/api/*` -> OK
+- CORS ограничение origin -> OK
+- внешние проверки:
+  - Google Safe Browsing -> OK
+  - Sucuri -> OK
+  - SSL Labs API -> ограничение по capacity
+  - VirusTotal -> нужна ручная/авторизованная проверка
+
+### Что изменено (файлы)
+
+В репозитории:
+- `.gitignore` — исключение чувствительных файлов/артефактов
+- `tg/api/app.py` — security headers middleware + CORS sanitation
+- `admin-spa/package.json` — обновление зависимостей
+- `admin-spa/package-lock.json` — lockfile после security-fix
+
+На сервере (вне git-репозитория):
+- `/etc/nginx/nginx.conf` — TLS/server_tokens hardening
+- `/etc/nginx/sites-enabled/kurer-spb.ru` — security headers + CSP
+
+### Рекомендации на будущее
+
+1. Перевести SSH на key-based auth, отключить `PermitRootLogin yes`, добавить fail2ban/ufw.
+2. Исправить `your-domain.com` placeholders в `robots.txt`/`sitemap.xml`.
+3. Провести ручную проверку в Google Search Console: Security Issues -> Request a Review.
+4. По возможности заменить `X-XSS-Protection` на современные механизмы (CSP уже применён).
+5. Перевести FastAPI `on_event` на lifespan hooks (deprecation cleanup).
+
+### Rollback
+
+Если нужен откат:
+1. Код:
+   - `cd /opt/kurer-spb`
+   - `git checkout main && git pull --ff-only`
+2. Nginx:
+   - восстановить из `/root/backups/20260222_2249/nginx.conf`
+   - восстановить `/root/backups/20260222_2249/sites-enabled/`
+   - `nginx -t && systemctl reload nginx`
+3. БД:
+   - бинарный restore: `/root/backups/20260222_2249/applications.db`
+   - или SQL restore из `/root/backups/20260222_2249/applications_dump.sql`
+4. Сервисы:
+   - `systemctl restart kurer-api`
+   - `systemctl restart kurer-bot`
