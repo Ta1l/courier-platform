@@ -4,6 +4,9 @@ __pycache__/
 *.pyo
 *.pyd
 *.log
+.env
+.env.local
+.env.*.local
 .venv/
 venv/
 .pytest_cache/
@@ -30,3 +33,5 @@ admin-spa/node_modules/
 *.swp
 .DS_Store
 Thumbs.db
+*.pem
+private.key
