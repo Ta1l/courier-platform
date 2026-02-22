@@ -54,6 +54,7 @@ def test_migration_creates_applications_with_admin_columns_on_empty_db(tmp_path:
         applied = migrate_to_latest(conn)
         assert "0001" in applied
         assert "0002" in applied
+        assert "0003" in applied
 
         columns = _application_columns(conn)
         assert "campaign_id" in columns
@@ -116,7 +117,7 @@ def test_migration_repairs_schema_when_0001_applied_before_table_creation(tmp_pa
         conn.commit()
 
         applied = migrate_to_latest(conn)
-        assert applied == ["0002"]
+        assert applied == ["0002", "0003"]
 
         columns = _application_columns(conn)
         assert "campaign_id" in columns
