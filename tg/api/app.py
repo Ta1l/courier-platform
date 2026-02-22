@@ -5,9 +5,10 @@ from __future__ import annotations
 import logging
 import sqlite3
 from pathlib import Path
+from urllib.parse import urlparse
 
 import aiosqlite
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 
@@ -18,6 +19,70 @@ from database.db import DB_PATH, init_db
 from migrations.runner import migrate_to_latest
 
 logger = logging.getLogger(__name__)
+
+
+SECURITY_HEADERS = {
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "base-uri 'self'; "
+        "object-src 'none'; "
+        "frame-ancestors 'none'; "
+        "script-src 'self' 'unsafe-inline' https://mc.yandex.ru "
+        "https://www.googletagmanager.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self' https://mc.yandex.ru https://api-metrika.yandex.net; "
+        "frame-src 'none'; "
+        "form-action 'self'; "
+        "upgrade-insecure-requests"
+    ),
+    "Content-Security-Policy-Report-Only": (
+        "default-src 'self'; "
+        "base-uri 'self'; "
+        "object-src 'none'; "
+        "frame-ancestors 'none'; "
+        "script-src 'self' 'unsafe-inline' https://mc.yandex.ru "
+        "https://www.googletagmanager.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self' https://mc.yandex.ru https://api-metrika.yandex.net; "
+        "frame-src 'none'; "
+        "form-action 'self'; "
+        "upgrade-insecure-requests"
+    ),
+}
+
+
+def _origin_from_url(url: str) -> str | None:
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _sanitize_cors_origins(origins: list[str]) -> list[str]:
+    filtered = [origin for origin in origins if origin != "*"]
+    if filtered:
+        return filtered
+
+    site_origin = _origin_from_url(settings.site_base_url)
+    if site_origin:
+        logger.warning(
+            "Wildcard CORS origin ignored; falling back to SITE_BASE_URL origin: %s",
+            site_origin,
+        )
+        return [site_origin]
+
+    logger.warning(
+        "Wildcard CORS origin ignored; falling back to localhost dev origins."
+    )
+    return ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
 def _safe_admin_asset(asset_path: str) -> Path | None:
@@ -45,13 +110,31 @@ def create_app() -> FastAPI:
         openapi_url=f"{settings.api_prefix}/openapi.json",
     )
 
+    cors_origins = _sanitize_cors_origins(settings.cors_origins)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
+        allow_origins=cors_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
+
+    @app.middleware("http")
+    async def security_headers_middleware(
+        request: Request, call_next
+    ) -> Response:
+        response = await call_next(request)
+
+        for header, value in SECURITY_HEADERS.items():
+            if header not in response.headers:
+                response.headers[header] = value
+
+        if "Strict-Transport-Security" not in response.headers:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+
+        return response
 
     api_router = APIRouter(prefix=settings.api_prefix)
     api_router.include_router(auth.router)
