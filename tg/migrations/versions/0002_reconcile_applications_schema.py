@@ -123,6 +123,28 @@ def upgrade(conn: sqlite3.Connection) -> None:
 
     if applications_exists:
         conn.execute(
+            """
+            UPDATE applications
+            SET status = 'new'
+            WHERE status IS NULL OR TRIM(status) = ''
+            """
+        )
+        if _table_exists(conn, "campaigns"):
+            conn.execute(
+                """
+                UPDATE applications
+                SET campaign_id = CAST(SUBSTR(source, 6) AS INTEGER)
+                WHERE campaign_id IS NULL
+                  AND source GLOB 'camp_[0-9]*'
+                  AND CAST(SUBSTR(source, 6) AS INTEGER) > 0
+                  AND EXISTS (
+                        SELECT 1
+                        FROM campaigns c
+                        WHERE c.id = CAST(SUBSTR(source, 6) AS INTEGER)
+                  )
+                """
+            )
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_applications_campaign_id ON applications(campaign_id)"
         )
         conn.execute(

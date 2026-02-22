@@ -82,7 +82,37 @@ def test_migration_repairs_schema_when_0001_applied_before_table_creation(tmp_pa
             "INSERT INTO schema_migrations (revision, applied_at) VALUES (?, datetime('now'))",
             ("0001",),
         )
+
+        conn.execute(
+            """
+            CREATE TABLE campaigns (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                investor_id INTEGER NOT NULL,
+                name        TEXT    NOT NULL,
+                budget      REAL    NOT NULL,
+                status      TEXT    NOT NULL DEFAULT 'active',
+                created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO campaigns (id, investor_id, name, budget, status, created_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            """,
+            (7, 1, "Campaign Seven", 1000.0, "active"),
+        )
+
         _create_legacy_applications_table(conn)
+        conn.execute(
+            """
+            INSERT INTO applications (
+                telegram_id, username, first_name, phone, age, citizenship, source,
+                contacted, submitted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """,
+            (111111, "legacy_user", "Legacy User", "+70000000000", 30, "RU", "camp_7", 0),
+        )
         conn.commit()
 
         applied = migrate_to_latest(conn)
@@ -92,5 +122,11 @@ def test_migration_repairs_schema_when_0001_applied_before_table_creation(tmp_pa
         assert "campaign_id" in columns
         assert "revenue" in columns
         assert "status" in columns
+
+        row = conn.execute(
+            "SELECT campaign_id, status FROM applications WHERE telegram_id = ?",
+            (111111,),
+        ).fetchone()
+        assert row == (7, "new")
     finally:
         conn.close()
