@@ -511,6 +511,9 @@ npm run build
 - `systemctl is-active kurer-bot` -> active
 - `systemctl is-active nginx` -> active
 - `curl https://api.telegram.org/bot<TOKEN>/getMe` -> `ok: true`, bot `@kurer_pro_bot`
+- Rate limit логина проверен фактически:
+  - 5 неуспешных попыток -> `401`
+  - далее -> `429 Too many login attempts`
 - Ошибок в `nginx/error.log` по результатам проверки не зафиксировано.
 
 ### X. Git commits/push (PASS)
