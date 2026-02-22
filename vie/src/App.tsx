@@ -1,4 +1,6 @@
 ﻿import { useState } from "react";
+import { Helmet } from "react-helmet-async";
+import { useParams } from "react-router-dom";
 import { getBotLink, getBotLinkCard } from "./config";
 import { CTAButton } from "./components/common/CTAButton";
 import { FAQItem } from "./components/common/FAQItem";
@@ -9,18 +11,28 @@ import { EbikeModal } from "./components/modals/EbikeModal";
 import { COPY } from "./content/copy";
 
 export function App() {
+  const { id } = useParams<{ id?: string }>();
+  const campIdFromPath = id && /^\d+$/.test(id) ? id : undefined;
   const [ebikeModal, setEbikeModal] = useState(false);
   const [calcModal, setCalcModal] = useState(false);
   const [caseTab, setCaseTab] = useState<"case" | "table" | "calc">("case");
   /* CHANGE 2: dismissible banner state */
   const [bannerVisible, setBannerVisible] = useState(true);
 
-  const botLink = getBotLink();
-  const botLinkCard = getBotLinkCard();
+  const botLink = getBotLink(undefined, campIdFromPath);
+  const botLinkCard = getBotLinkCard(campIdFromPath);
+  const canonicalUrl = campIdFromPath
+    ? `https://kurer-spb.ru/camp/${campIdFromPath}`
+    : "https://kurer-spb.ru/";
   const year = new Date().getFullYear();
 
   return (
     <div className="min-h-screen bg-[var(--color-bg)]">
+      <Helmet>
+        <link rel="canonical" href={canonicalUrl} />
+        <meta name="robots" content="index, follow" />
+        <meta property="og:url" content={canonicalUrl} />
+      </Helmet>
 
       {/* ═══ CHANGE 2: FIXED TOP BONUS BANNER — dismissible, mobile-safe ═══
           CSS: .bonus-banner in index.css

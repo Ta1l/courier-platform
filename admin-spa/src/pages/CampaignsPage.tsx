@@ -222,7 +222,7 @@ export function CampaignsPage() {
               </thead>
               <tbody>
                 {campaigns.map((campaign) => {
-                  const trackingLink = `${siteBaseUrl}/?camp=${campaign.id}`;
+                  const trackingLink = `${siteBaseUrl}/camp/${campaign.id}`;
                   return (
                     <tr key={campaign.id}>
                       <td>{campaign.id}</td>

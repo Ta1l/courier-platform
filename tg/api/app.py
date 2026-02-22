@@ -8,9 +8,11 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import aiosqlite
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
 from api.bootstrap import ensure_bootstrap_admin
 from api.config import settings
@@ -21,42 +23,17 @@ from migrations.runner import migrate_to_latest
 logger = logging.getLogger(__name__)
 
 
-SECURITY_HEADERS = {
-    "X-Frame-Options": "DENY",
-    "X-Content-Type-Options": "nosniff",
-    "Referrer-Policy": "strict-origin-when-cross-origin",
-    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-    "Content-Security-Policy": (
-        "default-src 'self'; "
-        "base-uri 'self'; "
-        "object-src 'none'; "
-        "frame-ancestors 'none'; "
-        "script-src 'self' 'unsafe-inline' https://mc.yandex.ru "
-        "https://www.googletagmanager.com; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com data:; "
-        "img-src 'self' data: https:; "
-        "connect-src 'self' https://mc.yandex.ru https://api-metrika.yandex.net; "
-        "frame-src 'none'; "
-        "form-action 'self'; "
-        "upgrade-insecure-requests"
-    ),
-    "Content-Security-Policy-Report-Only": (
-        "default-src 'self'; "
-        "base-uri 'self'; "
-        "object-src 'none'; "
-        "frame-ancestors 'none'; "
-        "script-src 'self' 'unsafe-inline' https://mc.yandex.ru "
-        "https://www.googletagmanager.com; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com data:; "
-        "img-src 'self' data: https:; "
-        "connect-src 'self' https://mc.yandex.ru https://api-metrika.yandex.net; "
-        "frame-src 'none'; "
-        "form-action 'self'; "
-        "upgrade-insecure-requests"
-    ),
-}
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response: Response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=(), payment=()"
+        )
+        return response
 
 
 def _origin_from_url(url: str) -> str | None:
@@ -110,6 +87,8 @@ def create_app() -> FastAPI:
         openapi_url=f"{settings.api_prefix}/openapi.json",
     )
 
+    app.add_middleware(SecurityHeadersMiddleware)
+
     cors_origins = _sanitize_cors_origins(settings.cors_origins)
     app.add_middleware(
         CORSMiddleware,
@@ -118,23 +97,6 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
-
-    @app.middleware("http")
-    async def security_headers_middleware(
-        request: Request, call_next
-    ) -> Response:
-        response = await call_next(request)
-
-        for header, value in SECURITY_HEADERS.items():
-            if header not in response.headers:
-                response.headers[header] = value
-
-        if "Strict-Transport-Security" not in response.headers:
-            response.headers["Strict-Transport-Security"] = (
-                "max-age=31536000; includeSubDomains"
-            )
-
-        return response
 
     api_router = APIRouter(prefix=settings.api_prefix)
     api_router.include_router(auth.router)
@@ -172,6 +134,18 @@ def create_app() -> FastAPI:
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/", include_in_schema=False)
+    async def root(camp: int | None = None) -> Response:
+        site_base = settings.site_base_url.rstrip("/")
+        if camp is not None:
+            return RedirectResponse(url=f"{site_base}/camp/{camp}", status_code=301)
+        return RedirectResponse(url=f"{site_base}/", status_code=307)
+
+    @app.get("/camp/{camp_id}", include_in_schema=False)
+    async def campaign_slug(camp_id: int) -> Response:
+        site_base = settings.site_base_url.rstrip("/")
+        return RedirectResponse(url=f"{site_base}/camp/{camp_id}", status_code=307)
 
     @app.get("/admin", include_in_schema=False)
     async def admin_root() -> Response:
