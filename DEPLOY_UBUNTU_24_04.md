@@ -63,8 +63,8 @@ SITE_BASE_URL=https://kurer-spb.ru
 
 ```bash
 # Лэндинг
-npm ci
-npm run build
+npm --prefix vie ci
+npm --prefix vie run build
 
 # Админ SPA
 npm --prefix admin-spa ci
@@ -204,8 +204,8 @@ git pull
 source .venv/bin/activate
 pip install -r tg/requirements.txt
 
-npm ci
-npm run build
+npm --prefix vie ci
+npm --prefix vie run build
 npm --prefix admin-spa ci
 npm --prefix admin-spa run build
 
@@ -222,4 +222,3 @@ curl -I https://kurer-spb.ru
 curl -I https://kurer-spb.ru/admin
 curl -I https://kurer-spb.ru/api/docs
 ```
-
